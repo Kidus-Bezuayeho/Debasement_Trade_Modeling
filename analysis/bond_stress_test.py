@@ -13,19 +13,26 @@ from datetime import datetime
 
 # ── Event dates (same as regime_model.py) ────────────────────────────────────
 EVENT_DATES = [
-    '2022-02-24',  # Russia invades Ukraine
-    '2022-03-16',  # FOMC liftoff (first hike)
-    '2022-06-15',  # 75bp surprise hike
-    '2023-03-10',  # SVB collapse
-    '2023-03-19',  # Credit Suisse rescue
-    '2024-04-13',  # Iran attacks Israel
+    '2022-03-16',  # FOMC liftoff — first hike in tightening cycle
+    '2022-06-15',  # FOMC — 75bp hike (jumbo move)
+    '2023-03-10',  # SVB failure — Fed Bank Term Funding Program / discount window
+    '2023-03-19',  # Credit Suisse rescue — swap lines / global central-bank coordination
+    '2023-12-13',  # FOMC — dovish pivot / cut guidance for 2024 (positive risk-asset shock)
+    '2024-02-02',  # Presidential candidate: would not reappoint Powell
+    '2024-08-08',  # Presidential remarks — should have say in Fed (independence debate)
+    '2024-09-18',  # FOMC — first rate cut of cycle (50bp; large dovish repricing)
+    '2024-11-07',  # FOMC — follow-on cut (continued easing path)
+    '2025-04-17',  # Escalated removal rhetoric vs Fed chair (independence risk)
+    '2025-04-22',  # Walk-back: no intention to fire chair (positive tail-risk reduction)
+    '2025-05-04',  # Interview: won't remove chair before term ends (independence stabilizing)
+    '2025-06-12',  # Rates pressure; won't fire chair but may "force something" (headline)
 ]
 
 # ── Date ranges (same as regime_model.py) ────────────────────────────────────
 PRE_START  = datetime(2015, 1, 1)
 PRE_END    = datetime(2021, 12, 31)
 POST_START = datetime(2022, 1, 1)
-POST_END   = datetime(2024, 12, 31)
+POST_END   = datetime(2025, 12, 31)
 FULL_START = PRE_START
 
 # ── Fetch data ────────────────────────────────────────────────────────────────
@@ -97,10 +104,10 @@ print(f"\nBond-Specific Stress Residuals Summary:")
 print(bond_stress_residuals.describe())
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ANALYSIS 2 — Treasury Selloff at Escalation Events
+# ANALYSIS 2 — Treasury Selloff at Fed-Focused Event Dates
 # ══════════════════════════════════════════════════════════════════════════════
 print(f"\n{'═'*58}")
-print("ANALYSIS 2 — Treasury Selloff at Escalation Events")
+print("ANALYSIS 2 — Treasury Selloff at Fed-Focused Event Dates")
 print(f"{'═'*58}")
 
 WINDOWS = [0, 1, 3, 5, 10]
@@ -124,36 +131,83 @@ for ed in EVENT_DATES:
             row[f'{asset}_d{w}'] = round(float(cum_ret), 6)
     per_event[ed] = row
 
-# Aggregate across events
-print(f"\n{'─'*58}")
-print(f"{'Window':<8} {'TLT mean':>10} {'TLT p':>8}  {'IEF mean':>10} {'IEF p':>8}  {'GLD mean':>10} {'GLD p':>8}")
-print(f"{'─'*58}")
+# ── Estimation window: pre-break daily sigma per asset ────────────────────────
+estimation_window = df_diff.loc[PRE_START:PRE_END]
+sigma_est = {asset: float(estimation_window[asset].std()) for asset in assets}
+print(f"\nEstimation-window daily sigma: " +
+      "  ".join(f"{a}={sigma_est[a]:.5f}" for a in assets))
+
+# ── Bootstrap p-value (two-sided, H0: mean = 0) ───────────────────────────────
+_rng = np.random.default_rng(42)
+
+def bootstrap_pvalue(vals, n_bootstrap=10_000):
+    """Two-sided bootstrap p-value for H0: mean = 0."""
+    arr = np.asarray(vals, dtype=float)
+    observed = np.abs(arr.mean())
+    centered = arr - arr.mean()          # enforce null
+    boot_means = np.abs(
+        _rng.choice(centered, size=(n_bootstrap, len(arr)), replace=True).mean(axis=1)
+    )
+    return float((boot_means >= observed).mean())
+
+# ── Adjusted Patell / BMP test ────────────────────────────────────────────────
+def adjusted_patell_test(vals, sigma_daily, n_days):
+    """
+    Boehmer, Musumeci & Poulsen (1991) standardised cross-sectional test.
+
+    Each event return is first standardised by the pre-event estimation-window
+    volatility, then the cross-sectional standard deviation of those SAR values
+    is used as the denominator — this corrects for the inflated variance and
+    cross-sectional correlation that arise when events are clustered.
+
+        SAR_e  = cumret_e / (sigma_daily * sqrt(n_days))
+        Z_BMP  = mean(SAR) / (std(SAR) / sqrt(N))  ~  t(N-1)
+    """
+    arr = np.asarray(vals, dtype=float)
+    N = len(arr)
+    if N < 3 or sigma_daily <= 0:
+        return np.nan, np.nan
+    sar = arr / (sigma_daily * np.sqrt(n_days))
+    bmp_stat = sar.mean() / (sar.std(ddof=1) / np.sqrt(N))
+    p_val = 2.0 * stats.t.sf(np.abs(bmp_stat), df=N - 1)
+    return float(bmp_stat), float(p_val)
+
+# ── Aggregate across events ───────────────────────────────────────────────────
+HDR = f"{'Window':<6} {'Asset':<6} {'Mean':>9} {'p(t)':>9} {'p(boot)':>9} {'p(BMP)':>9} {'BMPstat':>9}  n"
+print(f"\n{'─'*len(HDR)}")
+print(HDR)
+print(f"{'─'*len(HDR)}")
 
 aggregate = {}
 for w in WINDOWS:
     agg_row = {}
+    n_days = w + 1          # window spans days 0 … w inclusive
     for asset in assets:
         key = f'{asset}_d{w}'
         vals = [per_event[ed][key] for ed in per_event if key in per_event[ed]]
         if len(vals) < 2:
             continue
         vals_arr = np.array(vals)
-        t_stat, p_val = stats.ttest_1samp(vals_arr, 0)
+        t_stat, p_ttest = stats.ttest_1samp(vals_arr, 0)
+        p_boot           = bootstrap_pvalue(vals_arr)
+        bmp_stat, p_bmp  = adjusted_patell_test(vals_arr, sigma_est[asset], n_days)
         agg_row[asset] = {
-            'mean':   round(float(vals_arr.mean()), 6),
-            'median': round(float(np.median(vals_arr)), 6),
-            't_stat': round(float(t_stat), 6),
-            'p_value': round(float(p_val), 6),
-            'n':      len(vals),
+            'mean':     round(float(vals_arr.mean()), 6),
+            'median':   round(float(np.median(vals_arr)), 6),
+            't_stat':   round(float(t_stat), 6),
+            'p_ttest':  round(float(p_ttest), 6),
+            'p_boot':   round(float(p_boot), 6),
+            'bmp_stat': round(float(bmp_stat) if not np.isnan(bmp_stat) else float('nan'), 6),
+            'p_bmp':    round(float(p_bmp)    if not np.isnan(p_bmp)    else float('nan'), 6),
+            'n':        len(vals),
         }
+        print(f"d{w:<5} {asset:<6} {agg_row[asset]['mean']:>9.4f} "
+              f"{agg_row[asset]['p_ttest']:>9.4f} "
+              f"{agg_row[asset]['p_boot']:>9.4f} "
+              f"{agg_row[asset]['p_bmp']:>9.4f} "
+              f"{agg_row[asset]['bmp_stat']:>9.4f}  "
+              f"{agg_row[asset]['n']}")
     aggregate[f'd{w}'] = agg_row
-
-    tlt = aggregate[f'd{w}'].get('TLT', {})
-    ief = aggregate[f'd{w}'].get('IEF', {})
-    gld = aggregate[f'd{w}'].get('GLD', {})
-    print(f"d{w:<7} {tlt.get('mean', float('nan')):>10.4f} {tlt.get('p_value', float('nan')):>8.4f}  "
-          f"{ief.get('mean', float('nan')):>10.4f} {ief.get('p_value', float('nan')):>8.4f}  "
-          f"{gld.get('mean', float('nan')):>10.4f} {gld.get('p_value', float('nan')):>8.4f}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ANALYSIS 3 — Weekly Rotation Regression
@@ -187,7 +241,7 @@ def rotation_model(df, label):
     return sm.OLS(y, X).fit(cov_type='HAC', cov_kwds={'maxlags': 1}), label
 
 model_rot_pre,  _ = rotation_model(weekly_pre,  'Pre-Break Weekly Rotation 2015-2021')
-model_rot_post, _ = rotation_model(weekly_post, 'Post-Break Weekly Rotation 2022-2024')
+model_rot_post, _ = rotation_model(weekly_post, 'Post-Break Weekly Rotation 2022-2025')
 
 print(f"\n{'═'*58}")
 print("Weekly Rotation — Pre-Break (2015–2021)")
@@ -195,7 +249,7 @@ print(f"{'═'*58}")
 print(model_rot_pre.summary())
 
 print(f"\n{'═'*58}")
-print("Weekly Rotation — Post-Break (2022–2024)")
+print("Weekly Rotation — Post-Break (2022–2025)")
 print(f"{'═'*58}")
 print(model_rot_post.summary())
 
@@ -223,20 +277,28 @@ ratio_lines = (
     f"  max   : {ratio_summary['max']:.4f}"
 )
 
+_shdr = f"{'Win':<5} {'Asset':<5} {'Mean':>9} {'p(t)':>9} {'p(boot)':>9} {'p(BMP)':>9} {'BMPstat':>9}"
 selloff_lines = [
-    f"{'Window':<8} {'TLT mean':>10} {'TLT p':>8}  {'IEF mean':>10} {'IEF p':>8}  {'GLD mean':>10} {'GLD p':>8}",
-    '─' * 68,
+    'AGGREGATE EVENT-STUDY RESULTS',
+    '(p(t)=standard t-test, p(boot)=bootstrapped [H0: mean=0, two-sided, B=10,000],',
+    ' p(BMP)=Adjusted Patell/BMP test correcting for cross-sectional correlation)',
+    '',
+    _shdr,
+    '─' * len(_shdr),
 ]
 for w in WINDOWS:
     wk = f'd{w}'
-    tlt = aggregate[wk].get('TLT', {})
-    ief = aggregate[wk].get('IEF', {})
-    gld = aggregate[wk].get('GLD', {})
-    selloff_lines.append(
-        f"+{w:<7} {tlt.get('mean', float('nan')):>10.4f} {tlt.get('p_value', float('nan')):>8.4f}  "
-        f"{ief.get('mean', float('nan')):>10.4f} {ief.get('p_value', float('nan')):>8.4f}  "
-        f"{gld.get('mean', float('nan')):>10.4f} {gld.get('p_value', float('nan')):>8.4f}"
-    )
+    for asset in assets:
+        a = aggregate[wk].get(asset, {})
+        selloff_lines.append(
+            f"d{w:<4} {asset:<5} "
+            f"{a.get('mean',    float('nan')):>9.4f} "
+            f"{a.get('p_ttest', float('nan')):>9.4f} "
+            f"{a.get('p_boot',  float('nan')):>9.4f} "
+            f"{a.get('p_bmp',   float('nan')):>9.4f} "
+            f"{a.get('bmp_stat',float('nan')):>9.4f}"
+        )
+    selloff_lines.append('')
 selloff_lines += ['', 'Per-event detail:',
                   f"  {'Event':<12} {'TLT d0':>8} {'TLT d5':>8} {'TLT d10':>8}  {'IEF d0':>8} {'IEF d5':>8}  {'GLD d0':>8} {'GLD d5':>8}"]
 for ed, row in per_event.items():
@@ -273,14 +335,14 @@ with PdfPages(out_path) as pdf:
               '\n\nMOVE/VIX RATIO SUMMARY (raw levels)\n' + ratio_lines)
 
     # Page 2: Treasury selloff event study
-    text_page(pdf, 'Analysis 2 — Treasury Selloff at Escalation Events',
+    text_page(pdf, 'Analysis 2 — Treasury Selloff at Fed-Focused Event Dates',
               '\n'.join(selloff_lines))
 
     # Page 3: Rotation regression summaries
     text_page(pdf, 'Analysis 3 — Weekly Rotation: Pre-Break (2015–2021)',
               str(model_rot_pre.summary()))
 
-    text_page(pdf, 'Analysis 3 — Weekly Rotation: Post-Break (2022–2024)',
+    text_page(pdf, 'Analysis 3 — Weekly Rotation: Post-Break (2022–2025)',
               str(model_rot_post.summary()) +
               '\n\nCOEFFICIENT COMPARISON: Pre vs Post\n' +
               '\n'.join(rot_cmp_lines))
@@ -310,7 +372,9 @@ with PdfPages(out_path) as pdf:
     ax2.axhline(0, color='black', linewidth=0.8)
     ax2.set_xticks(x)
     ax2.set_xticklabels([f'+{w}d' for w in WINDOWS])
-    ax2.set_title('Mean Cumulative Return at Escalation Events (across 6 events)')
+    ax2.set_title(
+        f'Mean Cumulative Return at Fed-Focused Events (across {len(EVENT_DATES)} events)'
+    )
     ax2.set_ylabel('Mean cumulative log return')
     ax2.legend(fontsize=9)
 
@@ -318,7 +382,7 @@ with PdfPages(out_path) as pdf:
     ax3.scatter(weekly_pre['BondReturn'],  weekly_pre['GoldReturn'],
                 color='steelblue', alpha=0.4, s=15, label='Pre-break (2015–2021)')
     ax3.scatter(weekly_post['BondReturn'], weekly_post['GoldReturn'],
-                color='firebrick', alpha=0.4, s=15, label='Post-break (2022–2024)')
+                color='firebrick', alpha=0.4, s=15, label='Post-break (2022–2025)')
     x_range = np.linspace(weekly['BondReturn'].min(), weekly['BondReturn'].max(), 100)
     for mdl, color in [(model_rot_pre, 'steelblue'), (model_rot_post, 'firebrick')]:
         y_fit = mdl.params['const'] + mdl.params['BondReturn'] * x_range

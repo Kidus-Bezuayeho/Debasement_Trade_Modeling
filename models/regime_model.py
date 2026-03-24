@@ -11,23 +11,30 @@ import yfinance as yf
 from datetime import datetime
 
 # ── Event dates to exclude from the post-break model ─────────────────────────
-# These are dates where gold moved for idiosyncratic/event-driven reasons
-# that shouldn't be baked into the structural baseline.
+# Fed-directed days: hawkish/dovish FOMC surprises, emergency liquidity,
+# independence politics, and large dovish pivots / cuts that reprice gold & rates.
 # Add/remove dates as needed.
 EVENT_DATES = [
-    '2022-02-24',  # Russia invades Ukraine
-    '2022-03-16',  # FOMC liftoff (first hike)
-    '2022-06-15',  # 75bp surprise hike
-    '2023-03-10',  # SVB collapse
-    '2023-03-19',  # Credit Suisse rescue
-    '2024-04-13',  # Iran attacks Israel
+    '2022-03-16',  # FOMC liftoff — first hike in tightening cycle
+    '2022-06-15',  # FOMC — 75bp hike (jumbo move)
+    '2023-03-10',  # SVB failure — Fed Bank Term Funding Program / discount window
+    '2023-03-19',  # Credit Suisse rescue — swap lines / global central-bank coordination
+    '2023-12-13',  # FOMC — dovish pivot / cut guidance for 2024 (positive risk-asset shock)
+    '2024-02-02',  # Presidential candidate: would not reappoint Powell
+    '2024-08-08',  # Presidential remarks — should have say in Fed (independence debate)
+    '2024-09-18',  # FOMC — first rate cut of cycle (50bp; large dovish repricing)
+    '2024-11-07',  # FOMC — follow-on cut (continued easing path)
+    '2025-04-17',  # Escalated removal rhetoric vs Fed chair (independence risk)
+    '2025-04-22',  # Walk-back: no intention to fire chair (positive tail-risk reduction)
+    '2025-05-04',  # Interview: won't remove chair before term ends (independence stabilizing)
+    '2025-06-12',  # Rates pressure; won't fire chair but may "force something" (headline)
 ]
 
 # ── Date ranges ───────────────────────────────────────────────────────────────
 PRE_START  = datetime(2015, 1, 1)
 PRE_END    = datetime(2021, 12, 31)
 POST_START = datetime(2022, 1, 1)
-POST_END   = datetime(2024, 12, 31)
+POST_END   = datetime(2025, 12, 31)
 FULL_START = PRE_START
 
 # ── Fetch data ────────────────────────────────────────────────────────────────
@@ -103,13 +110,13 @@ print("MODEL 1 — Pre-Break OLS (2015–2021) with HAC Std Errors")
 print(f"{'═'*58}")
 print(model_pre.summary())
 
-# ── Model 2: Post-break OLS (2022–2024, excl. event dates) ───────────────────
+# ── Model 2: Post-break OLS (2022–2025, excl. event dates) ───────────────────
 X_post = sm.add_constant(post_clean[predictors])
 y_post = post_clean['Gold']
 model_post = sm.OLS(y_post, X_post).fit(cov_type='HAC', cov_kwds={'maxlags': 1})
 
 print(f"\n{'═'*58}")
-print("MODEL 2 — Post-Break OLS (2022–2024, excl. events) with HAC Std Errors")
+print("MODEL 2 — Post-Break OLS (2022–2025, excl. events) with HAC Std Errors")
 print(f"{'═'*58}")
 print(model_post.summary())
 
@@ -184,7 +191,7 @@ with PdfPages(out_path) as pdf:
               str(model_pre.summary()))
 
     # Page 2: Post-break model summary
-    text_page(pdf, 'Model 2 — Post-Break OLS (2022–2024, excl. events) with HAC Std Errors',
+    text_page(pdf, 'Model 2 — Post-Break OLS (2022–2025, excl. events) with HAC Std Errors',
               str(model_post.summary()))
 
     # Page 3: Coefficient comparison + residuals summary
@@ -208,7 +215,7 @@ with PdfPages(out_path) as pdf:
     for d in event_idx:
         ax1.axvline(pd.Timestamp(d), color='orange', linewidth=1, linestyle='--', alpha=0.8)
     ax1.axhline(0, color='black', linewidth=0.8)
-    ax1.set_title('Post-Break Model Residuals — Gold vs. Macro Baseline (2022–2024)')
+    ax1.set_title('Post-Break Model Residuals — Gold vs. Macro Baseline (2022–2025)')
     ax1.set_ylabel('Residual (log return)')
     ax1.legend(fontsize=9)
 
