@@ -260,7 +260,9 @@ for var in ['const', 'BondReturn']:
     )
 
 # ── Plots & PDF export ────────────────────────────────────────────────────────
-sns.set_theme(style='darkgrid')
+import sys
+from theme import apply_premium_theme
+apply_premium_theme(is_cyberpunk=False)
 out_path = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'bond_stress_test_results.pdf')
 
 with PdfPages(out_path) as pdf:

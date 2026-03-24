@@ -109,7 +109,12 @@ print(f"Test RMSE: {test_rmse:.6f}")
 # ── Plot 1: Feature Importance ────────────────────────────────────────────────
 importance = pd.Series(xgb.feature_importances_, index=X.columns).sort_values()
 
-sns.set_theme(style='darkgrid')
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from analysis.theme import apply_premium_theme, add_cyberpunk_glow
+
+apply_premium_theme(is_cyberpunk=True)
 fig1, ax1 = plt.subplots(figsize=(8, 6))
 importance.plot(kind='barh', ax=ax1, color='steelblue')
 ax1.set_title('XGBoost Feature Importance (Gain)')
@@ -128,6 +133,7 @@ df_plot = pd.DataFrame({
 
 fig2, ax2 = plt.subplots(figsize=(12, 6))
 sns.lineplot(data=df_plot, x='Date', y='Indexed Price', hue='Series', ax=ax2)
+add_cyberpunk_glow(ax2)
 ax2.set_title('XGBoost — GLD Actual vs. Predicted (Test Period)')
 ax2.text(0.01, 0.97, f'R² = {test_r2:.4f}  |  RMSE = {test_rmse:.6f}',
          transform=ax2.transAxes, verticalalignment='top', fontsize=10, color='gray')

@@ -171,7 +171,11 @@ resid_lines = [
 ]
 
 # ── Plots & PDF export ────────────────────────────────────────────────────────
-sns.set_theme(style='darkgrid')
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from analysis.theme import apply_premium_theme
+apply_premium_theme(is_cyberpunk=False)
 out_path = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'regime_model_results.pdf')
 
 with PdfPages(out_path) as pdf:

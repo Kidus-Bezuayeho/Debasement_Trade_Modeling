@@ -124,10 +124,16 @@ df_plot = pd.DataFrame({
     'Predicted GLD': predicted_price.values
 }).melt(id_vars='Date', var_name='Series', value_name='Indexed Price')
 
-sns.set_theme(style='darkgrid')
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from analysis.theme import apply_premium_theme, add_cyberpunk_glow
+
+apply_premium_theme(is_cyberpunk=True)
 fig3, ax3 = plt.subplots(figsize=(12, 6))
 
 sns.lineplot(data=df_plot, x='Date', y='Indexed Price', hue='Series', ax=ax3)
+add_cyberpunk_glow(ax3)
 
 ax3.set_title('GLD: Actual vs. Predicted (OLS on Log Returns, 2015–2021)')
 ax3.text(0.01, 0.97, f'R² = {model.rsquared:.4f}', transform=ax3.transAxes,

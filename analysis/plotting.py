@@ -30,10 +30,13 @@ df_normalized = df_combined / df_combined.iloc[0] * 100
 
 df_plot = df_normalized.reset_index().melt(id_vars='Date', var_name='Asset', value_name='Indexed Price')
 
-sns.set_theme(style='darkgrid')
+from theme import apply_premium_theme, add_cyberpunk_glow
+
+apply_premium_theme(is_cyberpunk=True)
 fig, ax = plt.subplots(figsize=(12, 6))
 
 sns.lineplot(data=df_plot, x='Date', y='Indexed Price', hue='Asset', ax=ax)
+add_cyberpunk_glow(ax)
 
 ax.set_title('Asset Prices (Indexed to 100, 2015–2021)')
 ax.set_xlabel('Date')
